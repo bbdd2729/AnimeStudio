@@ -94,7 +94,7 @@ namespace AnimeStudio.GUI
 
             if (!BuildExportableAssetItems(context) || !ApplyAssetPostProcessing(context))
             {
-                return (string.Empty, Array.Empty<TreeNode>().ToList());
+                return (string.Empty, new List<TreeNode>());
             }
 
             visibleAssets = exportableAssets;
@@ -105,7 +105,7 @@ namespace AnimeStudio.GUI
 
             if (treeNodeCollection == null)
             {
-                return (string.Empty, Array.Empty<TreeNode>().ToList());
+                return (string.Empty, new List<TreeNode>());
             }
 
             return (context.ProductName, treeNodeCollection);

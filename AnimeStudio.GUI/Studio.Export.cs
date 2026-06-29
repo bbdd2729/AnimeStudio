@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -65,7 +64,7 @@ namespace AnimeStudio.GUI
                     break;
             }
 
-            return exportPath + Path.DirectorySeparatorChar;
+            return EnsureTrailingDirectorySeparator(exportPath);
         }
 
         private static string GetContainerExportPath(string savePath, AssetItem asset)
@@ -166,11 +165,11 @@ namespace AnimeStudio.GUI
                         break;
                 }
 
-                var statusText = $"Finished exporting asset list with {toExportAssets.Count()} items.";
+                var statusText = $"Finished exporting asset list with {toExportAssets.Count} items.";
 
                 StatusStripUpdate(statusText);
 
-                if (Properties.Settings.Default.openAfterExport && toExportAssets.Count() > 0)
+                if (Properties.Settings.Default.openAfterExport && toExportAssets.Count > 0)
                 {
                     OpenFolderInExplorer(savePath);
                 }
@@ -181,8 +180,8 @@ namespace AnimeStudio.GUI
         {
             return Task.Run(() =>
             {
-                var exportNodes = GetSplitExportNodes(nodes).ToList();
-                var count = exportNodes.Sum(x => x.Nodes.Count);
+                var exportNodes = GetSplitExportNodes(nodes);
+                var count = CountSplitExportObjects(exportNodes);
                 int k = 0;
                 Progress.Reset();
 
@@ -203,28 +202,31 @@ namespace AnimeStudio.GUI
             });
         }
 
-        private static IEnumerable<TreeNode> GetSplitExportNodes(TreeNodeCollection nodes)
+        private static List<TreeNode> GetSplitExportNodes(TreeNodeCollection nodes)
         {
+            var exportNodes = new List<TreeNode>();
             foreach (TreeNode node in nodes)
             {
                 if (node.Nodes.Count == 0)
                 {
-                    yield return node;
+                    exportNodes.Add(node);
                     continue;
                 }
 
                 foreach (TreeNode subNode in node.Nodes)
                 {
-                    yield return subNode;
+                    exportNodes.Add(subNode);
                 }
             }
+
+            return exportNodes;
         }
 
         private static void ExportSplitObject(string savePath, TreeNode parentNode, GameObjectTreeNode node)
         {
             var gameObjects = new List<GameObject>();
             CollectNode(node, gameObjects);
-            if (gameObjects.All(x => x.m_SkinnedMeshRenderer == null && x.m_MeshFilter == null))
+            if (!HasAnyModel(gameObjects))
             {
                 return;
             }
@@ -317,7 +319,7 @@ namespace AnimeStudio.GUI
                         StatusStripUpdate($"Exporting {gameObject.m_Name}");
                         try
                         {
-                            var subExportPath = Path.Combine(exportPath, gameObject.m_Name) + Path.DirectorySeparatorChar;
+                            var subExportPath = EnsureTrailingDirectorySeparator(Path.Combine(exportPath, gameObject.m_Name));
                             ExportGameObject(gameObject, subExportPath, animationList);
                             StatusStripUpdate($"Finished exporting {gameObject.m_Name}");
                         }
@@ -418,6 +420,37 @@ namespace AnimeStudio.GUI
                     GetSelectedParentNode(i.Nodes, gameObjects);
                 }
             }
+        }
+
+        private static int CountSplitExportObjects(List<TreeNode> exportNodes)
+        {
+            var count = 0;
+            foreach (var node in exportNodes)
+            {
+                count += node.Nodes.Count;
+            }
+
+            return count;
+        }
+
+        private static bool HasAnyModel(List<GameObject> gameObjects)
+        {
+            foreach (var gameObject in gameObjects)
+            {
+                if (gameObject.m_SkinnedMeshRenderer != null || gameObject.m_MeshFilter != null)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string EnsureTrailingDirectorySeparator(string path)
+        {
+            return path.Length > 0 && path[path.Length - 1] == Path.DirectorySeparatorChar
+                ? path
+                : path + Path.DirectorySeparatorChar;
         }
     }
 }
