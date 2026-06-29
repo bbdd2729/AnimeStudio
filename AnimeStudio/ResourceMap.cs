@@ -34,15 +34,15 @@ namespace AnimeStudio
                 Logger.Info(string.Format("Parsing...."));
                 try
                 {
-                    string             extension = Path.GetExtension(path).ToLower();
-                    using FileStream   stream    = File.OpenRead(path);
-                    AssetMap           newMap    = null;
+                    string   extension = Path.GetExtension(path).ToLower();
+                    AssetMap newMap    = null;
 
                     switch(extension)
                     {
                         case ".map":
                         {
                             // Deserialize map
+                            using FileStream stream = File.OpenRead(path);
                             newMap = MessagePackSerializer.Deserialize<AssetMap>
                                     (stream,
                                      MessagePackSerializerOptions.Standard.WithCompression
@@ -52,6 +52,7 @@ namespace AnimeStudio
                         case ".json":
                         {
                             // Deserialize json
+                            using FileStream stream = File.OpenRead(path);
                             using var reader      = new StreamReader(stream);
                             string    jsonContent = reader.ReadToEnd();
                             AssetMap  parsed      = JsonConvert.DeserializeObject<AssetMap>(jsonContent);
