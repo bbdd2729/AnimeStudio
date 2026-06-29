@@ -328,7 +328,7 @@ namespace AnimeStudio
                 var filters = new AssetMapFilters(typeFilters, nameFilters, containerFilters);
                 foreach (var file in LoadFiles(files))
                 {
-                    BuildAssetMap(file, assets, filters);
+                    CollectAssetMapEntries(file, assets, filters);
                 }
 
                 UpdateContainers(assets, game);
@@ -342,13 +342,9 @@ namespace AnimeStudio
             
         }
 
-        private static void BuildAssetMap(string file, List<AssetEntry> assets, AssetMapFilters filters)
+        private static void CollectAssetMapEntries(string file, List<AssetEntry> assets, AssetMapFilters filters)
         {
-            var matches = new List<AssetEntry>();
-            var containers = new List<(PPtr<Object>, string)>();
-            var mihoyoBinDataNames = new List<(PPtr<Object>, string)>();
-            var objectAssetItemDic = new Dictionary<Object, AssetEntry>();
-            var animators = new List<(PPtr<Object>, AssetEntry)>();
+            var context = new AssetMapBuildContext(file);
             foreach (var assetsFile in assetsManager.assetsFileList)
             {
                 foreach (var objInfo in assetsFile.m_Objects)
@@ -359,148 +355,166 @@ namespace AnimeStudio
                         return;
                     }
                     var objectReader = new ObjectReader(assetsFile.reader, assetsFile, objInfo, assetsManager.Game);
-                    var obj = new Object(objectReader);
-                    var asset = new AssetEntry()
-                    {
-                        Source = file,
-                        PathID = objectReader.m_PathID,
-                        Type = objectReader.type,
-                        Container = "",
-                        Hash = obj.GetHash(),
-                        Offset = assetsFile.offset
-                    };
-
-                    var exportable = false;
-                    try
-                    {
-                        switch (objectReader.type)
-                        {
-                            case ClassIDType.AssetBundle when ClassIDType.AssetBundle.CanParse():
-                                var assetBundle = new AssetBundle(objectReader);
-                                foreach (var m_Container in assetBundle.m_Container)
-                                {
-                                    var preloadIndex = m_Container.Value.preloadIndex;
-                                    var preloadSize = m_Container.Value.preloadSize;
-                                    var preloadEnd = preloadIndex + preloadSize;
-
-                                    string container = m_Container.Key;
-                                    var pathTest = Paths;
-                                    if(ulong.TryParse(container, out var hash) && Paths.TryGetValue(hash, out var path))
-                                    {
-                                        container = path;
-                                    }
-                                    for (int k = preloadIndex; k < preloadEnd; k++)
-                                    {
-                                        containers.Add((assetBundle.m_PreloadTable[k], container));
-                                    }
-                                }
-
-                                obj = null;
-                                asset.Name = assetBundle.m_Name;
-                                exportable = ClassIDType.AssetBundle.CanExport();
-                                break;
-                            case ClassIDType.GameObject when ClassIDType.GameObject.CanParse():
-                                var gameObject = new GameObject(objectReader);
-                                obj = gameObject;
-                                asset.Name = gameObject.m_Name;
-                                exportable = ClassIDType.GameObject.CanExport();
-                                break;
-                            case ClassIDType.Shader when ClassIDType.Shader.CanParse():
-                                asset.Name = objectReader.ReadAlignedString();
-                                if (string.IsNullOrEmpty(asset.Name))
-                                {
-                                    var m_parsedForm = new SerializedShader(objectReader);
-                                    asset.Name = m_parsedForm.m_Name;
-                                }
-
-                                exportable = ClassIDType.Shader.CanExport();
-                                break;
-                            case ClassIDType.Animator when ClassIDType.Animator.CanParse():
-                                var component = new PPtr<Object>(objectReader);
-                                animators.Add((component, asset));
-                                asset.Name = objectReader.type.ToString();
-                                exportable = ClassIDType.Animator.CanExport();
-                                break;
-                            case ClassIDType.MiHoYoBinData when ClassIDType.MiHoYoBinData.CanParse():
-                                var MiHoYoBinData = new MiHoYoBinData(objectReader);
-                                obj = MiHoYoBinData;
-                                asset.Name = objectReader.type.ToString();
-                                exportable = ClassIDType.MiHoYoBinData.CanExport();
-                                break;
-                            case ClassIDType.NapAssetBundleIndexAsset when ClassIDType.NapAssetBundleIndexAsset.CanParse():
-                                var NapAssetBundleIndexAsset = new NapAssetBundleIndexAsset(objectReader);
-                                obj = NapAssetBundleIndexAsset;
-                                asset.Name = obj.Name;
-                                exportable = ClassIDType.NapAssetBundleIndexAsset.CanExport();
-                                break;
-                            case ClassIDType.IndexObject when ClassIDType.IndexObject.CanParse():
-                                var indexObject = new IndexObject(objectReader);
-                                obj = null;
-                                foreach (var index in indexObject.AssetMap)
-                                {
-                                    mihoyoBinDataNames.Add((index.Value.Object, index.Key));
-                                }
-                                asset.Name = "IndexObject";
-                                exportable = ClassIDType.IndexObject.CanExport();
-                                break;
-                            case ClassIDType.Font when ClassIDType.Font.CanExport():
-                            case ClassIDType.Material when ClassIDType.Material.CanExport():
-                            case ClassIDType.Texture when ClassIDType.Texture.CanExport():
-                            case ClassIDType.Mesh when ClassIDType.Mesh.CanExport():
-                            case ClassIDType.Sprite when ClassIDType.Sprite.CanExport():
-                            case ClassIDType.TextAsset when ClassIDType.TextAsset.CanExport():
-                            case ClassIDType.Texture2D when ClassIDType.Texture2D.CanExport():
-                            case ClassIDType.VideoClip when ClassIDType.VideoClip.CanExport():
-                            case ClassIDType.AudioClip when ClassIDType.AudioClip.CanExport():
-                            case ClassIDType.AnimationClip when ClassIDType.AnimationClip.CanExport():
-                                asset.Name = objectReader.ReadAlignedString();
-                                exportable = true;
-                                break;
-                            case ClassIDType.MonoBehaviour when ClassIDType.MonoBehaviour.CanParse():
-                                var monoBehaviour = new MonoBehaviour(objectReader);
-                                asset.Name = String.IsNullOrWhiteSpace(monoBehaviour.Name) ? objectReader.type.ToString() : monoBehaviour.Name;
-                                exportable = true;
-                                break;
-                            default:
-                                asset.Name = objectReader.type.ToString();
-                                exportable = !Minimal;
-                                break;
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        var sb = new StringBuilder();
-                        sb.AppendLine("Unable to load object")
-                            .AppendLine($"Assets {assetsFile.fileName}")
-                            .AppendLine($"Path {assetsFile.originalPath}")
-                            .AppendLine($"Type {objectReader.type}")
-                            .AppendLine($"PathID {objectReader.m_PathID}")
-                            .Append(e);
-                        Logger.Error(sb.ToString());
-                    }
-                    if (obj != null)
-                    {
-                        objectAssetItemDic.Add(obj, asset);
-                        assetsFile.AddObject(obj);
-                    }
-                    if (exportable)
-                    {
-                        matches.Add(asset);
-                    }
+                    ProcessAssetMapObject(assetsFile, objectReader, context);
                 }
             }
-            foreach ((var pptr, var asset) in animators)
+
+            ApplyAnimatorNames(context);
+            ApplyMiHoYoBinDataNames(context);
+            ApplyAssetBundleContainers(context);
+
+            assets.AddRange(context.Matches.Where(filters.Matches));
+        }
+
+        private static void ProcessAssetMapObject(SerializedFile assetsFile, ObjectReader objectReader, AssetMapBuildContext context)
+        {
+            var obj = new Object(objectReader);
+            var asset = new AssetEntry()
+            {
+                Source = context.File,
+                PathID = objectReader.m_PathID,
+                Type = objectReader.type,
+                Container = "",
+                Hash = obj.GetHash(),
+                Offset = assetsFile.offset
+            };
+
+            var exportable = false;
+            try
+            {
+                switch (objectReader.type)
+                {
+                    case ClassIDType.AssetBundle when ClassIDType.AssetBundle.CanParse():
+                        var assetBundle = new AssetBundle(objectReader);
+                        foreach (var m_Container in assetBundle.m_Container)
+                        {
+                            var preloadIndex = m_Container.Value.preloadIndex;
+                            var preloadSize = m_Container.Value.preloadSize;
+                            var preloadEnd = preloadIndex + preloadSize;
+
+                            string container = m_Container.Key;
+                            if(ulong.TryParse(container, out var hash) && Paths.TryGetValue(hash, out var path))
+                            {
+                                container = path;
+                            }
+                            for (int k = preloadIndex; k < preloadEnd; k++)
+                            {
+                                context.Containers.Add((assetBundle.m_PreloadTable[k], container));
+                            }
+                        }
+
+                        obj = null;
+                        asset.Name = assetBundle.m_Name;
+                        exportable = ClassIDType.AssetBundle.CanExport();
+                        break;
+                    case ClassIDType.GameObject when ClassIDType.GameObject.CanParse():
+                        var gameObject = new GameObject(objectReader);
+                        obj = gameObject;
+                        asset.Name = gameObject.m_Name;
+                        exportable = ClassIDType.GameObject.CanExport();
+                        break;
+                    case ClassIDType.Shader when ClassIDType.Shader.CanParse():
+                        asset.Name = objectReader.ReadAlignedString();
+                        if (string.IsNullOrEmpty(asset.Name))
+                        {
+                            var m_parsedForm = new SerializedShader(objectReader);
+                            asset.Name = m_parsedForm.m_Name;
+                        }
+
+                        exportable = ClassIDType.Shader.CanExport();
+                        break;
+                    case ClassIDType.Animator when ClassIDType.Animator.CanParse():
+                        var component = new PPtr<Object>(objectReader);
+                        context.Animators.Add((component, asset));
+                        asset.Name = objectReader.type.ToString();
+                        exportable = ClassIDType.Animator.CanExport();
+                        break;
+                    case ClassIDType.MiHoYoBinData when ClassIDType.MiHoYoBinData.CanParse():
+                        var MiHoYoBinData = new MiHoYoBinData(objectReader);
+                        obj = MiHoYoBinData;
+                        asset.Name = objectReader.type.ToString();
+                        exportable = ClassIDType.MiHoYoBinData.CanExport();
+                        break;
+                    case ClassIDType.NapAssetBundleIndexAsset when ClassIDType.NapAssetBundleIndexAsset.CanParse():
+                        var NapAssetBundleIndexAsset = new NapAssetBundleIndexAsset(objectReader);
+                        obj = NapAssetBundleIndexAsset;
+                        asset.Name = obj.Name;
+                        exportable = ClassIDType.NapAssetBundleIndexAsset.CanExport();
+                        break;
+                    case ClassIDType.IndexObject when ClassIDType.IndexObject.CanParse():
+                        var indexObject = new IndexObject(objectReader);
+                        obj = null;
+                        foreach (var index in indexObject.AssetMap)
+                        {
+                            context.MiHoYoBinDataNames.Add((index.Value.Object, index.Key));
+                        }
+                        asset.Name = "IndexObject";
+                        exportable = ClassIDType.IndexObject.CanExport();
+                        break;
+                    case ClassIDType.Font when ClassIDType.Font.CanExport():
+                    case ClassIDType.Material when ClassIDType.Material.CanExport():
+                    case ClassIDType.Texture when ClassIDType.Texture.CanExport():
+                    case ClassIDType.Mesh when ClassIDType.Mesh.CanExport():
+                    case ClassIDType.Sprite when ClassIDType.Sprite.CanExport():
+                    case ClassIDType.TextAsset when ClassIDType.TextAsset.CanExport():
+                    case ClassIDType.Texture2D when ClassIDType.Texture2D.CanExport():
+                    case ClassIDType.VideoClip when ClassIDType.VideoClip.CanExport():
+                    case ClassIDType.AudioClip when ClassIDType.AudioClip.CanExport():
+                    case ClassIDType.AnimationClip when ClassIDType.AnimationClip.CanExport():
+                        asset.Name = objectReader.ReadAlignedString();
+                        exportable = true;
+                        break;
+                    case ClassIDType.MonoBehaviour when ClassIDType.MonoBehaviour.CanParse():
+                        var monoBehaviour = new MonoBehaviour(objectReader);
+                        asset.Name = String.IsNullOrWhiteSpace(monoBehaviour.Name) ? objectReader.type.ToString() : monoBehaviour.Name;
+                        exportable = true;
+                        break;
+                    default:
+                        asset.Name = objectReader.type.ToString();
+                        exportable = !Minimal;
+                        break;
+                }
+            }
+            catch (Exception e)
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine("Unable to load object")
+                    .AppendLine($"Assets {assetsFile.fileName}")
+                    .AppendLine($"Path {assetsFile.originalPath}")
+                    .AppendLine($"Type {objectReader.type}")
+                    .AppendLine($"PathID {objectReader.m_PathID}")
+                    .Append(e);
+                Logger.Error(sb.ToString());
+            }
+            if (obj != null)
+            {
+                context.ObjectAssetEntries.Add(obj, asset);
+                assetsFile.AddObject(obj);
+            }
+            if (exportable)
+            {
+                context.Matches.Add(asset);
+            }
+        }
+
+        private static void ApplyAnimatorNames(AssetMapBuildContext context)
+        {
+            foreach ((var pptr, var asset) in context.Animators)
             {
                 if (pptr.TryGet<GameObject>(out var gameObject))
                 {
                     asset.Name = gameObject.m_Name;
                 }
             }
-            foreach ((var pptr, var name) in mihoyoBinDataNames)
+        }
+
+        private static void ApplyMiHoYoBinDataNames(AssetMapBuildContext context)
+        {
+            foreach ((var pptr, var name) in context.MiHoYoBinDataNames)
             {
                 if (pptr.TryGet<MiHoYoBinData>(out var miHoYoBinData))
                 {
-                    var asset = objectAssetItemDic[miHoYoBinData];
+                    var asset = context.ObjectAssetEntries[miHoYoBinData];
                     if (int.TryParse(name, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var hash))
                     {
                         asset.Name = name;
@@ -509,15 +523,17 @@ namespace AnimeStudio
                     else asset.Name = $"BinFile #{asset.PathID}";
                 }
             }
-            foreach ((var pptr, var container) in containers)
+        }
+
+        private static void ApplyAssetBundleContainers(AssetMapBuildContext context)
+        {
+            foreach ((var pptr, var container) in context.Containers)
             {
                 if (pptr.TryGet(out var obj))
                 {
-                    objectAssetItemDic[obj].Container = container;
+                    context.ObjectAssetEntries[obj].Container = container;
                 }
             }
-
-            assets.AddRange(matches.Where(filters.Matches));
         }
 
         public static string[] ParseAssetMap
@@ -748,7 +764,7 @@ namespace AnimeStudio
             foreach(var file in LoadFiles(files))
             {
                 BuildCABMap(file, ref collision);
-                BuildAssetMap(file, assets, filters);
+                CollectAssetMapEntries(file, assets, filters);
             }
 
             UpdateContainers(assets, game);
@@ -841,6 +857,21 @@ namespace AnimeStudio
 
                 return false;
             }
+        }
+
+        private sealed class AssetMapBuildContext
+        {
+            public AssetMapBuildContext(string file)
+            {
+                File = file;
+            }
+
+            public string File { get; }
+            public List<AssetEntry> Matches { get; } = new();
+            public List<(PPtr<Object>, string)> Containers { get; } = new();
+            public List<(PPtr<Object>, string)> MiHoYoBinDataNames { get; } = new();
+            public Dictionary<Object, AssetEntry> ObjectAssetEntries { get; } = new();
+            public List<(PPtr<Object>, AssetEntry)> Animators { get; } = new();
         }
 
         #endregion
