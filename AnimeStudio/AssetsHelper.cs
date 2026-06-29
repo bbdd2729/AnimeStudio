@@ -549,91 +549,99 @@ namespace AnimeStudio
             switch (mapType)
             {
                 case ExportListType.MessagePack:
-                    {
-                        using var stream = File.OpenRead(mapName);
-                        var assetMap = MessagePackSerializer.Deserialize<AssetMap>(stream, MessagePackSerializerOptions.Standard.WithCompression(MessagePackCompression.Lz4BlockArray));
-                        foreach(var entry in assetMap.AssetEntries)
-                        {
-                            if (filters.Matches(entry))
-                            {
-                                matches.Add(entry.Source);
-                            }
-                        }
-                    }
-
+                    ParseMessagePackAssetMap(mapName, filters, matches);
                     break;
                 case ExportListType.XML:
-                    {
-                        using var stream = File.OpenRead(mapName);
-                        using var reader = XmlReader.Create(stream);
-                        reader.ReadToFollowing("Assets");
-                        reader.ReadToFollowing("Asset");
-                        do
-                        {
-                            reader.ReadToFollowing("Name");
-                            var name = reader.ReadInnerXml();
-
-                            reader.ReadToFollowing("Container");
-                            var container = reader.ReadInnerXml();
-
-                            reader.ReadToFollowing("Type");
-                            var type = reader.ReadInnerXml();
-
-                            reader.ReadToFollowing("PathID");
-                            reader.ReadInnerXml();
-
-                            reader.ReadToFollowing("Source");
-                            var source = reader.ReadInnerXml();
-
-                            if (filters.Matches(name, container, type))
-                            {
-                                matches.Add(source);
-                            }
-
-                            reader.ReadEndElement();
-                        } while (reader.ReadToNextSibling("Asset"));
-                    }
-
+                    ParseXmlAssetMap(mapName, filters, matches);
                     break;
                 case ExportListType.JSON:
-                    {
-                        using var stream = File.OpenRead(mapName);
-                        using var file = new StreamReader(stream);
-                        using var reader = new JsonTextReader(file);
-
-                        var serializer = new JsonSerializer { Formatting = Formatting.Indented };
-                        serializer.Converters.Add(new StringEnumConverter());
-
-                        var entries = serializer.Deserialize<List<AssetEntry>>(reader);
-                        foreach (var entry in entries)
-                        {
-                            if (filters.Matches(entry))
-                            {
-                                matches.Add(entry.Source);
-                            }
-                        }
-                    }
-                    
+                    ParseJsonAssetMap(mapName, filters, matches);
                     break;
                 case ExportListType.MemoryPack:
-                {
-                    using FileStream stream = File.OpenRead(mapName);
-                    AssetMap assetMap = MemoryPackStreamingSerializer.DeserializeAsync<AssetMap>
-                            (stream).FirstAsync().GetAwaiter().GetResult();
-
-                    foreach (AssetEntry entry in assetMap.AssetEntries)
-                        {
-                            if(entry == null) continue;
-
-                            if(filters.Matches(entry.Name ?? string.Empty, entry.Container ?? string.Empty, entry.Type))
-                                matches.Add(entry.Source ?? string.Empty);
-                        }
-                    
-                }
+                    ParseMemoryPackAssetMap(mapName, filters, matches);
                     break;
             }
             
             return matches.ToArray();
+        }
+
+        private static void ParseMessagePackAssetMap(string mapName, AssetMapFilters filters, HashSet<string> matches)
+        {
+            using var stream = File.OpenRead(mapName);
+            var assetMap = MessagePackSerializer.Deserialize<AssetMap>(stream, MessagePackSerializerOptions.Standard.WithCompression(MessagePackCompression.Lz4BlockArray));
+            foreach(var entry in assetMap.AssetEntries)
+            {
+                if (filters.Matches(entry))
+                {
+                    matches.Add(entry.Source);
+                }
+            }
+        }
+
+        private static void ParseXmlAssetMap(string mapName, AssetMapFilters filters, HashSet<string> matches)
+        {
+            using var stream = File.OpenRead(mapName);
+            using var reader = XmlReader.Create(stream);
+            reader.ReadToFollowing("Assets");
+            reader.ReadToFollowing("Asset");
+            do
+            {
+                reader.ReadToFollowing("Name");
+                var name = reader.ReadInnerXml();
+
+                reader.ReadToFollowing("Container");
+                var container = reader.ReadInnerXml();
+
+                reader.ReadToFollowing("Type");
+                var type = reader.ReadInnerXml();
+
+                reader.ReadToFollowing("PathID");
+                reader.ReadInnerXml();
+
+                reader.ReadToFollowing("Source");
+                var source = reader.ReadInnerXml();
+
+                if (filters.Matches(name, container, type))
+                {
+                    matches.Add(source);
+                }
+
+                reader.ReadEndElement();
+            } while (reader.ReadToNextSibling("Asset"));
+        }
+
+        private static void ParseJsonAssetMap(string mapName, AssetMapFilters filters, HashSet<string> matches)
+        {
+            using var stream = File.OpenRead(mapName);
+            using var file = new StreamReader(stream);
+            using var reader = new JsonTextReader(file);
+
+            var serializer = new JsonSerializer { Formatting = Formatting.Indented };
+            serializer.Converters.Add(new StringEnumConverter());
+
+            var entries = serializer.Deserialize<List<AssetEntry>>(reader);
+            foreach (var entry in entries)
+            {
+                if (filters.Matches(entry))
+                {
+                    matches.Add(entry.Source);
+                }
+            }
+        }
+
+        private static void ParseMemoryPackAssetMap(string mapName, AssetMapFilters filters, HashSet<string> matches)
+        {
+            using FileStream stream = File.OpenRead(mapName);
+            AssetMap assetMap = MemoryPackStreamingSerializer.DeserializeAsync<AssetMap>
+                    (stream).FirstAsync().GetAwaiter().GetResult();
+
+            foreach (AssetEntry entry in assetMap.AssetEntries)
+            {
+                if(entry == null) continue;
+
+                if(filters.Matches(entry.Name ?? string.Empty, entry.Container ?? string.Empty, entry.Type))
+                    matches.Add(entry.Source ?? string.Empty);
+            }
         }
 
         private static void UpdateContainers(List<AssetEntry> assets, Game game)
