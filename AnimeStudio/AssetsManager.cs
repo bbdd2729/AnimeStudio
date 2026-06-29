@@ -62,6 +62,17 @@ namespace AnimeStudio
 
         public Dictionary<string, List<long>> OffsetData = new();
 
+        internal bool CacheResourceReader(string name, BinaryReader reader)
+        {
+            if (resourceFileReaders.TryAdd(name, reader))
+            {
+                return true;
+            }
+
+            reader.Dispose();
+            return false;
+        }
+
         public void LoadFiles(params string[] files)
         {
             if (Silent)
@@ -292,7 +303,7 @@ namespace AnimeStudio
                 catch (Exception e)
                 {
                     Logger.Error($"Error while reading assets file {reader.FullPath} from {Path.GetFileName(originalPath)}", e);
-                    resourceFileReaders.TryAdd(reader.FileName, reader);
+                    CacheResourceReader(reader.FileName, reader);
                 }
             }
             else
@@ -322,7 +333,7 @@ namespace AnimeStudio
                             break;
                         case FileType.ResourceFile:
                             Logger.Verbose("Caching resource stream");
-                            resourceFileReaders.TryAdd(file.fileName, subReader); //TODO
+                            CacheResourceReader(file.fileName, subReader); //TODO
                             break;
                     }
                 }
@@ -415,7 +426,7 @@ namespace AnimeStudio
                             {
                                 entryReader.Position = 0;
                                 Logger.Verbose("Caching resource file");
-                                resourceFileReaders.TryAdd(entry.Name, entryReader);
+                                CacheResourceReader(entry.Name, entryReader);
                             }
                         }
                         catch (Exception e)
@@ -538,7 +549,7 @@ namespace AnimeStudio
                     else
                     {
                         Logger.Verbose("Caching resource stream");
-                        resourceFileReaders.TryAdd(innerFile.fileName, cabReader); //TODO
+                        CacheResourceReader(innerFile.fileName, cabReader); //TODO
                     }
                 }
             }
