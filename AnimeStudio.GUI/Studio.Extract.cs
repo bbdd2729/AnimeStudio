@@ -37,75 +37,57 @@ namespace AnimeStudio.GUI
 
         public static int ExtractFile(string fileName, string savePath)
         {
-            int extractedCount = 0;
             var reader = new FileReader(fileName);
             reader = reader.PreProcessing(Game);
-            if (reader.FileType == FileType.BundleFile)
-                extractedCount += ExtractBundleFile(reader, savePath);
-            else if (reader.FileType == FileType.WebFile)
-                extractedCount += ExtractWebDataFile(reader, savePath);
-            else if (reader.FileType == FileType.BlkFile)
-                extractedCount += ExtractBlkFile(reader, savePath);
-            else if (reader.FileType == FileType.BlockFile)
-                extractedCount += ExtractBlockFile(reader, savePath);
-            else if (reader.FileType == FileType.Blb3File)
-                extractedCount += ExtractBlb3File(reader, savePath);
-            else if (reader.FileType == FileType.VFSFile)
-                extractedCount += ExtractVFSFile(reader, savePath);
-            else
-                reader.Dispose();
-            return extractedCount;
+            switch (reader.FileType)
+            {
+                case FileType.BundleFile:
+                    return ExtractBundleFile(reader, savePath);
+                case FileType.WebFile:
+                    return ExtractWebDataFile(reader, savePath);
+                case FileType.BlkFile:
+                    return ExtractBlkFile(reader, savePath);
+                case FileType.BlockFile:
+                    return ExtractBlockFile(reader, savePath);
+                case FileType.Blb3File:
+                    return ExtractBlb3File(reader, savePath);
+                case FileType.VFSFile:
+                    return ExtractVFSFile(reader, savePath);
+                default:
+                    reader.Dispose();
+                    return 0;
+            }
         }
+
         private static int ExtractBlb3File(FileReader reader, string savePath)
         {
-            StatusStripUpdate($"Decompressing {reader.FileName} ...");
             try
             {
-                var bundleFile = new Blb3File(reader, reader.FullPath);
-                reader.Dispose();
-                if (bundleFile.fileList != null && bundleFile.fileList.Count > 0)
-                {
-                    var extractPath = Path.Combine(savePath, reader.FileName + "_unpacked");
-                    return ExtractStreamFile(extractPath, bundleFile.fileList);
-                }
+                return ExtractFileList(reader, savePath, currentReader => new Blb3File(currentReader, currentReader.FullPath).fileList);
             }
             catch (InvalidCastException)
             {
-                Logger.Error($"Game type mismatch, Expected {nameof(Mr0k)} but got {Game.Name} ({Game.GetType().Name}) !!");
+                LogGameTypeMismatch(nameof(Mr0k));
             }
             return 0;
         }
+
         private static int ExtractBundleFile(FileReader reader, string savePath)
         {
-            StatusStripUpdate($"Decompressing {reader.FileName} ...");
             try
             {
-                var bundleFile = new BundleFile(reader, Game);
-                reader.Dispose();
-                if (bundleFile.fileList != null && bundleFile.fileList.Count > 0)
-                {
-                    var extractPath = Path.Combine(savePath, reader.FileName + "_unpacked");
-                    return ExtractStreamFile(extractPath, bundleFile.fileList);
-                }
+                return ExtractFileList(reader, savePath, currentReader => new BundleFile(currentReader, Game).fileList);
             }
             catch (InvalidCastException)
             {
-                Logger.Error($"Game type mismatch, Expected {nameof(Mr0k)} but got {Game.Name} ({Game.GetType().Name}) !!");
+                LogGameTypeMismatch(nameof(Mr0k));
             }
             return 0;
         }
 
         private static int ExtractWebDataFile(FileReader reader, string savePath)
         {
-            StatusStripUpdate($"Decompressing {reader.FileName} ...");
-            var webFile = new WebFile(reader);
-            reader.Dispose();
-            if (webFile.fileList != null && webFile.fileList.Count > 0)
-            {
-                var extractPath = Path.Combine(savePath, reader.FileName + "_unpacked");
-                return ExtractStreamFile(extractPath, webFile.fileList);
-            }
-            return 0;
+            return ExtractFileList(reader, savePath, currentReader => new WebFile(currentReader).fileList);
         }
 
         private static int ExtractBlkFile(FileReader reader, string savePath)
@@ -118,9 +100,8 @@ namespace AnimeStudio.GUI
                 do
                 {
                     stream.Offset = stream.AbsolutePosition;
-                    var dummyPath = Path.Combine(reader.FullPath, stream.AbsolutePosition.ToString("X8"));
-                    var subReader = new FileReader(dummyPath, stream, true);
-                    var subSavePath = Path.Combine(savePath, reader.FileName + "_unpacked");
+                    var subReader = CreateSubReader(reader.FullPath, stream);
+                    var subSavePath = GetUnpackedPath(savePath, reader.FileName);
                     switch (subReader.FileType)
                     {
                         case FileType.BundleFile:
@@ -134,7 +115,7 @@ namespace AnimeStudio.GUI
             }
             catch (InvalidCastException)
             {
-                Logger.Error($"Game type mismatch, Expected {nameof(Blk)} but got {Game.Name} ({Game.GetType().Name}) !!");
+                LogGameTypeMismatch(nameof(Blk));
             }
             return total;
         }
@@ -147,31 +128,18 @@ namespace AnimeStudio.GUI
             do
             {
                 stream.Offset = stream.AbsolutePosition;
-                var subSavePath = Path.Combine(savePath, reader.FileName + "_unpacked");
-                var dummyPath = Path.Combine(reader.FullPath, stream.AbsolutePosition.ToString("X8"));
-                var subReader = new FileReader(dummyPath, stream, true);
-                if (subReader.FileType == FileType.Blb3File)
-                    total += ExtractBlb3File(subReader, subSavePath);
-                else if (subReader.FileType == FileType.VFSFile)
-                    total += ExtractVFSFile(subReader, subSavePath);
-                else
-                    total += ExtractBundleFile(subReader, subSavePath);
+                var subSavePath = GetUnpackedPath(savePath, reader.FileName);
+                var subReader = CreateSubReader(reader.FullPath, stream);
+                total += ExtractBlockSubFile(subReader, subSavePath);
             } while (stream.Remaining > 0);
             return total;
         }
 
         private static int ExtractVFSFile(FileReader reader, string savePath)
         {
-            StatusStripUpdate($"Decompressing {reader.FileName} ...");
             try
             {
-                var vfsFile = new VFSFile(reader, reader.FullPath, Studio.Game.Type);
-                reader.Dispose();
-                if (vfsFile.fileList != null && vfsFile.fileList.Count > 0)
-                {
-                    var extractPath = Path.Combine(savePath, reader.FileName + "_unpacked");
-                    return ExtractStreamFile(extractPath, vfsFile.fileList);
-                }
+                return ExtractFileList(reader, savePath, currentReader => new VFSFile(currentReader, currentReader.FullPath, Game.Type).fileList);
             }
             catch (Exception e)
             {
@@ -182,22 +150,61 @@ namespace AnimeStudio.GUI
 
         private static int ExtractMhyFile(FileReader reader, string savePath)
         {
-            StatusStripUpdate($"Decompressing {reader.FileName} ...");
             try
             {
-                var mhy0File = new MhyFile(reader, (Mhy)Game);
-                reader.Dispose();
-                if (mhy0File.fileList != null && mhy0File.fileList.Count > 0)
-                {
-                    var extractPath = Path.Combine(savePath, reader.FileName + "_unpacked");
-                    return ExtractStreamFile(extractPath, mhy0File.fileList);
-                }
+                return ExtractFileList(reader, savePath, currentReader => new MhyFile(currentReader, (Mhy)Game).fileList);
             }
             catch (InvalidCastException)
             {
-                Logger.Error($"Game type mismatch, Expected {nameof(Mhy)} but got {Game.Name} ({Game.GetType().Name}) !!");
+                LogGameTypeMismatch(nameof(Mhy));
             }
             return 0;
+        }
+
+        private static int ExtractBlockSubFile(FileReader subReader, string subSavePath)
+        {
+            switch (subReader.FileType)
+            {
+                case FileType.Blb3File:
+                    return ExtractBlb3File(subReader, subSavePath);
+                case FileType.VFSFile:
+                    return ExtractVFSFile(subReader, subSavePath);
+                default:
+                    return ExtractBundleFile(subReader, subSavePath);
+            }
+        }
+
+        private static int ExtractFileList(FileReader reader, string savePath, Func<FileReader, List<StreamFile>> readFileList)
+        {
+            StatusStripUpdate($"Decompressing {reader.FileName} ...");
+            var extractPath = GetUnpackedPath(savePath, reader.FileName);
+            List<StreamFile> fileList;
+            try
+            {
+                fileList = readFileList(reader);
+            }
+            finally
+            {
+                reader.Dispose();
+            }
+
+            return ExtractStreamFile(extractPath, fileList);
+        }
+
+        private static string GetUnpackedPath(string savePath, string fileName)
+        {
+            return Path.Combine(savePath, fileName + "_unpacked");
+        }
+
+        private static FileReader CreateSubReader(string parentPath, OffsetStream stream)
+        {
+            var dummyPath = Path.Combine(parentPath, stream.AbsolutePosition.ToString("X8"));
+            return new FileReader(dummyPath, stream, true);
+        }
+
+        private static void LogGameTypeMismatch(string expectedGameType)
+        {
+            Logger.Error($"Game type mismatch, Expected {expectedGameType} but got {Game.Name} ({Game.GetType().Name}) !!");
         }
 
         private static int ExtractStreamFile(string extractPath, List<StreamFile> fileList)
