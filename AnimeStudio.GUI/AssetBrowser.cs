@@ -186,36 +186,44 @@ namespace AnimeStudio.GUI
             Logger.Info($"Cleared !!");
         }
 
-        private void loadSelected_Click(object sender, EventArgs e)
+        private async void loadSelected_Click(object sender, EventArgs e)
         {
-            var files = assetDataGridView.SelectedRows.Cast<DataGridViewRow>()
-            .Select(x => _assetEntries[x.Index])
-            .Where(entry => entry != null)
-            .Select(entry => new AssetFilterDataItem
+            loadSelected.Enabled = false;
+            try
             {
-                Source = entry.Source,
-                Type = entry.Type,
-                Name = entry.Name,
-                PathID = entry.PathID,
-                Offset = entry.Offset
-            })
-            .ToList();
+                var files = assetDataGridView.SelectedRows.Cast<DataGridViewRow>()
+                    .Select(x => _assetEntries[x.Index])
+                    .Where(entry => entry != null)
+                    .Select(entry => new AssetFilterDataItem
+                    {
+                        Source = entry.Source,
+                        Type = entry.Type,
+                        Name = entry.Name,
+                        PathID = entry.PathID,
+                        Offset = entry.Offset
+                    })
+                    .ToList();
 
-            var filePaths = files.Select(x => x.Source).ToHashSet();
+                var filePaths = files.Select(x => x.Source).ToHashSet();
 
-            var missingFiles = filePaths.Where(x => !File.Exists(x));
-            foreach (var file in missingFiles)
-            {
-                Logger.Warning($"Unable to find file {file}, skipping...");
-                filePaths.Remove(file);
-                files.RemoveAll(x => x.Source == file);
+                var missingFiles = filePaths.Where(x => !File.Exists(x));
+                foreach (var file in missingFiles)
+                {
+                    Logger.Warning($"Unable to find file {file}, skipping...");
+                    filePaths.Remove(file);
+                    files.RemoveAll(x => x.Source == file);
+                }
+                if (filePaths.Count != 0 && !filePaths.Any(string.IsNullOrEmpty))
+                {
+                    Logger.Info("Loading...");
+                    bringMainToFront();
+                    _parent.Invoke(() => _parent.updateGame(ResourceMap.GetGameType()));
+                    await _parent.LoadPaths(files, filePaths.ToArray());
+                }
             }
-            if (filePaths.Count != 0 && !filePaths.Any(string.IsNullOrEmpty))
+            finally
             {
-                Logger.Info("Loading...");
-                bringMainToFront();
-                _parent.Invoke(() => _parent.updateGame(ResourceMap.GetGameType()));
-                _parent.Invoke(() => _parent.LoadPaths(files, filePaths.ToArray()));
+                updateButtons();
             }
         }
 

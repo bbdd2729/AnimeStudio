@@ -287,7 +287,7 @@ namespace AnimeStudio.GUI
             var paths = (string[])e.Data.GetData(DataFormats.FileDrop);
             if (paths.Length > 0)
             {
-                LoadPaths(null, paths);
+                await LoadPaths(null, paths);
             }
         }
 
@@ -338,27 +338,43 @@ namespace AnimeStudio.GUI
             return true;
         }
 
-        public async void LoadPaths(List<AssetFilterDataItem> filterData, params string[] paths)
+        private bool isLoadingPaths;
+
+        public async Task LoadPaths(List<AssetFilterDataItem> filterData, params string[] paths)
         {
+            if (isLoadingPaths)
+            {
+                Logger.Warning("A load operation is already running, skipping this request...");
+                return;
+            }
+
             long totalSize = GetTotalSize(paths);
             if (!SizeWarning(totalSize)) return;
 
-            ResetForm();
-            assetsManager.SpecifyUnityVersion = specifyUnityVersion.Text;
-            assetsManager.Game = Studio.Game;
-            if (filterData != null)
+            isLoadingPaths = true;
+            try
             {
-                assetsManager.FilterData = new AssetFilterData { Items = filterData };
+                ResetForm();
+                assetsManager.SpecifyUnityVersion = specifyUnityVersion.Text;
+                assetsManager.Game = Studio.Game;
+                if (filterData != null)
+                {
+                    assetsManager.FilterData = new AssetFilterData { Items = filterData };
+                }
+                if (paths.Length == 1 && Directory.Exists(paths[0]))
+                {
+                    await Task.Run(() => assetsManager.LoadFolder(paths[0]));
+                }
+                else
+                {
+                    await Task.Run(() => assetsManager.LoadFiles(paths));
+                }
+                BuildAssetStructures();
             }
-            if (paths.Length == 1 && Directory.Exists(paths[0]))
+            finally
             {
-                await Task.Run(() => assetsManager.LoadFolder(paths[0]));
+                isLoadingPaths = false;
             }
-            else
-            {
-                await Task.Run(() => assetsManager.LoadFiles(paths));
-            }
-            BuildAssetStructures();
         }
 
         private async void loadFile_Click(object sender, EventArgs e)
