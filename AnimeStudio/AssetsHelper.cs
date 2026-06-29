@@ -315,6 +315,8 @@ namespace AnimeStudio
             }
         }
 
+        #region AssetMap
+
         public static async Task BuildAssetMap(string[] files, string mapName, Game game, string savePath, ExportListType exportListType, ClassIDType[] typeFilters = null, Regex[] nameFilters = null, Regex[] containerFilters = null)
         {
             Logger.Info("Building AssetMap...");
@@ -776,6 +778,8 @@ namespace AnimeStudio
             Logger.Info($"Map build successfully !! {collision} collisions found");
             await ExportAssetsMap(assets, game, mapName, savePath, exportListType);
         }
+
+        #endregion
 
         #region Nested type: Entry
 
