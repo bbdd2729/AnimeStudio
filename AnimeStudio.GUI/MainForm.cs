@@ -2647,7 +2647,7 @@ namespace AnimeStudio.GUI
 
             var saveFileDialog = new SaveFileDialog()
             {
-                    Filter       = "Map file (*.map)|*.map|MemoryPack AssetMap File|*.memory",
+                    Filter = "Map file (*.map)|*.map|MemoryPack AssetMap File|*.memory|SQLite AssetMap File|*.sqlite",
                 DefaultExt       = "map",
                 Title            = "Select Output File (format will auto adjust according to what you selected)",
                 InitialDirectory = saveDirectory,

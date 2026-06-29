@@ -315,6 +315,17 @@ namespace AnimeStudio
             }
         }
 
+        #region Nested type: Entry
+
+        public record Entry
+        {
+            public string       Path         { get; set; }
+            public long         Offset       { get; set; }
+            public List<string> Dependencies { get; set; }
+        }
+
+        #endregion
+
         #region AssetMap
 
         public static async Task BuildAssetMap(string[] files, string mapName, Game game, string savePath, ExportListType exportListType, ClassIDType[] typeFilters = null, Regex[] nameFilters = null, Regex[] containerFilters = null)
@@ -560,6 +571,9 @@ namespace AnimeStudio
                 case ExportListType.MemoryPack:
                     ParseMemoryPackAssetMap(mapName, filters, matches);
                     break;
+                case ExportListType.SQLite:
+                    ParseSqliteAssetMap(mapName, filters, matches);
+                    break;
             }
             
             return matches.ToArray();
@@ -644,6 +658,14 @@ namespace AnimeStudio
             }
         }
 
+        private static void ParseSqliteAssetMap(string mapName, AssetMapFilters filters, HashSet<string> matches)
+        {
+            AssetMap assetMap = AssetMapSqlite.Load(mapName);
+            foreach (AssetEntry entry in assetMap.AssetEntries)
+                if(filters.Matches(entry))
+                    matches.Add(entry.Source);
+        }
+
         private static void UpdateContainers(List<AssetEntry> assets, Game game)
         {
             if (!game.Type.IsGISubGroup() || assets.Count == 0)
@@ -706,11 +728,18 @@ namespace AnimeStudio
                              {
                                  WriteMessagePackAssetMap(toExportAssets, game, name, savePath);
                              }
-
                              if(exportListType.HasFlag(ExportListType.MemoryPack))
                              {
                                  WriteMemoryPackAssetMap(toExportAssets, game, name, savePath);
                              }
+
+                             if(exportListType.HasFlag
+                                        (ExportListType.SQLite))
+                                 WriteSqliteAssetMap
+                                         (toExportAssets,
+                                          game,
+                                          name,
+                                          savePath);
 
                              Logger.Info($"Finished buidling AssetMap with {toExportAssets.Count} assets.");
                          }
@@ -769,6 +798,13 @@ namespace AnimeStudio
             File.WriteAllBytes(filename, data);
         }
 
+        private static void WriteSqliteAssetMap
+                (List<AssetEntry> toExportAssets, Game game, string name, string savePath)
+        {
+            string filename = Path.Combine(savePath, $"{name}.sqlite");
+            AssetMapSqlite.Save(filename, CreateAssetMap(game, toExportAssets));
+        }
+
         private static AssetMap CreateAssetMap(Game game, List<AssetEntry> assetEntries)
         {
             return new AssetMap
@@ -803,9 +839,9 @@ namespace AnimeStudio
 
         private sealed class AssetMapFilters
         {
+            private readonly Regex[]       _containerFilters;
+            private readonly Regex[]       _nameFilters;
             private readonly ClassIDType[] _typeFilters;
-            private readonly Regex[] _nameFilters;
-            private readonly Regex[] _containerFilters;
 
             public AssetMapFilters(ClassIDType[] typeFilters, Regex[] nameFilters, Regex[] containerFilters)
             {
@@ -893,23 +929,12 @@ namespace AnimeStudio
                 File = file;
             }
 
-            public string File { get; }
-            public List<AssetEntry> Matches { get; } = new();
-            public List<(PPtr<Object>, string)> Containers { get; } = new();
-            public List<(PPtr<Object>, string)> MiHoYoBinDataNames { get; } = new();
-            public Dictionary<Object, AssetEntry> ObjectAssetEntries { get; } = new();
-            public List<(PPtr<Object>, AssetEntry)> Animators { get; } = new();
-        }
-
-        #endregion
-
-        #region Nested type: Entry
-
-        public record Entry
-        {
-            public string       Path         { get; set; }
-            public long         Offset       { get; set; }
-            public List<string> Dependencies { get; set; }
+            public string                           File { get; }
+            public List<AssetEntry>                 Matches { get; } = new List<AssetEntry>();
+            public List<(PPtr<Object>, string)>     Containers { get; } = new List<(PPtr<Object>, string)>();
+            public List<(PPtr<Object>, string)>     MiHoYoBinDataNames { get; } = new List<(PPtr<Object>, string)>();
+            public Dictionary<Object, AssetEntry>   ObjectAssetEntries { get; } = new Dictionary<Object, AssetEntry>();
+            public List<(PPtr<Object>, AssetEntry)> Animators { get; } = new List<(PPtr<Object>, AssetEntry)>();
         }
 
         #endregion

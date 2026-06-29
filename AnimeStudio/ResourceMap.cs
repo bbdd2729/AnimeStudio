@@ -49,7 +49,6 @@ namespace AnimeStudio
                                              (MessagePackCompression.Lz4BlockArray));
                             break;
                         }
-
                         case ".json":
                         {
                             // Deserialize json
@@ -74,6 +73,11 @@ namespace AnimeStudio
                             newMap = assetMap;
                             break;
                         }
+                        case ".sqlite":
+                        {
+                            newMap = AssetMapSqlite.Load(path);
+                            break;
+                        } 
                     }
 
                     if (newMap == null)
