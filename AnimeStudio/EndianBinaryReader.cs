@@ -111,28 +111,41 @@ namespace AnimeStudio
         }
         public override byte[] ReadBytes(int count)
         {
+            if (count < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(count));
+            }
+
             if (count == 0)
             {
                 return Array.Empty<byte>();
             }
 
-            var buffer = ArrayPool<byte>.Shared.Rent(0x1000);
-            List<byte> result = new List<byte>(count);
-            do
+            var result = new byte[count];
+            var offset = 0;
+            while (offset < count)
             {
-                var readNum = Math.Min(count, buffer.Length);
-                int n = Read(buffer, 0, readNum);
-                if (n == 0)
+                var read = Read(result, offset, count - offset);
+                if (read == 0)
                 {
                     break;
                 }
 
-                result.AddRange(buffer[..n]);
-                count -= n;
-            } while (count > 0);
+                offset += read;
+            }
 
-            ArrayPool<byte>.Shared.Return(buffer);
-            return result.ToArray();
+            if (offset == count)
+            {
+                return result;
+            }
+
+            if (offset == 0)
+            {
+                return Array.Empty<byte>();
+            }
+
+            Array.Resize(ref result, offset);
+            return result;
         }
 
         public void AlignStream()
