@@ -325,9 +325,10 @@ namespace AnimeStudio
                 Progress.Reset();
                 assetsManager.Game = game;
                 var assets = new List<AssetEntry>();
+                var filters = new AssetMapFilters(typeFilters, nameFilters, containerFilters);
                 foreach (var file in LoadFiles(files))
                 {
-                    BuildAssetMap(file, assets, typeFilters, nameFilters, containerFilters);
+                    BuildAssetMap(file, assets, filters);
                 }
 
                 UpdateContainers(assets, game);
@@ -341,7 +342,7 @@ namespace AnimeStudio
             
         }
 
-        private static void BuildAssetMap(string file, List<AssetEntry> assets, ClassIDType[] typeFilters = null, Regex[] nameFilters = null, Regex[] containerFilters = null)
+        private static void BuildAssetMap(string file, List<AssetEntry> assets, AssetMapFilters filters)
         {
             var matches = new List<AssetEntry>();
             var containers = new List<(PPtr<Object>, string)>();
@@ -516,13 +517,7 @@ namespace AnimeStudio
                 }
             }
 
-            assets.AddRange(matches.Where(x =>
-            {
-                var isMatchRegex = nameFilters.IsNullOrEmpty() || nameFilters.Any(y => y.IsMatch(x.Name));
-                var isFilteredType = typeFilters.IsNullOrEmpty() || typeFilters.Contains(x.Type);
-                var isContainerMatch = containerFilters.IsNullOrEmpty() || containerFilters.Any(y => y.IsMatch(x.Container));
-                return isMatchRegex && isFilteredType && isContainerMatch;
-            }));
+            assets.AddRange(matches.Where(filters.Matches));
         }
 
         public static string[] ParseAssetMap
@@ -533,6 +528,7 @@ namespace AnimeStudio
          Regex[] containerFilter)
         {
             var matches = new HashSet<string>();
+            var filters = new AssetMapFilters(typeFilter, nameFilter, containerFilter);
 
             switch (mapType)
             {
@@ -542,10 +538,7 @@ namespace AnimeStudio
                         var assetMap = MessagePackSerializer.Deserialize<AssetMap>(stream, MessagePackSerializerOptions.Standard.WithCompression(MessagePackCompression.Lz4BlockArray));
                         foreach(var entry in assetMap.AssetEntries)
                         {
-                            var isNameMatch = nameFilter.Length == 0 || nameFilter.Any(x => x.IsMatch(entry.Name));
-                            var isContainerMatch = containerFilter.Length == 0 || containerFilter.Any(x => x.IsMatch(entry.Container));
-                            var isTypeMatch = typeFilter.Length == 0 || typeFilter.Any(x => x == entry.Type);
-                            if (isNameMatch && isContainerMatch && isTypeMatch)
+                            if (filters.Matches(entry))
                             {
                                 matches.Add(entry.Source);
                             }
@@ -564,25 +557,19 @@ namespace AnimeStudio
                             reader.ReadToFollowing("Name");
                             var name = reader.ReadInnerXml();
 
-                            var isNameMatch = nameFilter.Length == 0 || nameFilter.Any(x => x.IsMatch(name));
-
                             reader.ReadToFollowing("Container");
                             var container = reader.ReadInnerXml();
-
-                            var isContainerMatch = containerFilter.Length == 0 || containerFilter.Any(x => x.IsMatch(container));
 
                             reader.ReadToFollowing("Type");
                             var type = reader.ReadInnerXml();
 
-                            var isTypeMatch = typeFilter.Length == 0 || typeFilter.Any(x => x.ToString().Equals(type, StringComparison.OrdinalIgnoreCase));
-
                             reader.ReadToFollowing("PathID");
-                            var pathID = reader.ReadInnerXml();
+                            reader.ReadInnerXml();
 
                             reader.ReadToFollowing("Source");
                             var source = reader.ReadInnerXml();
 
-                            if (isNameMatch && isContainerMatch && isTypeMatch)
+                            if (filters.Matches(name, container, type))
                             {
                                 matches.Add(source);
                             }
@@ -604,10 +591,7 @@ namespace AnimeStudio
                         var entries = serializer.Deserialize<List<AssetEntry>>(reader);
                         foreach (var entry in entries)
                         {
-                            var isNameMatch = nameFilter.Length == 0 || nameFilter.Any(x => x.IsMatch(entry.Name));
-                            var isContainerMatch = containerFilter.Length == 0 || containerFilter.Any(x => x.IsMatch(entry.Container));
-                            var isTypeMatch = typeFilter.Length == 0 || typeFilter.Any(x => x == entry.Type);
-                            if (isNameMatch && isContainerMatch && isTypeMatch)
+                            if (filters.Matches(entry))
                             {
                                 matches.Add(entry.Source);
                             }
@@ -625,13 +609,7 @@ namespace AnimeStudio
                         {
                             if(entry == null) continue;
 
-                            bool isNameMatch = nameFilter.Length == 0 || nameFilter.Any
-                                    (x => x.IsMatch(entry.Name ?? string.Empty));
-                            bool isContainerMatch = containerFilter.Length == 0 || containerFilter.Any
-                                    (x => x.IsMatch(entry.Container ?? string.Empty));
-                            bool isTypeMatch = typeFilter.Length == 0 || typeFilter.Any(x => x == entry.Type);
-
-                            if(isNameMatch && isContainerMatch && isTypeMatch)
+                            if(filters.Matches(entry.Name ?? string.Empty, entry.Container ?? string.Empty, entry.Type))
                                 matches.Add(entry.Source ?? string.Empty);
                         }
                     
@@ -766,10 +744,11 @@ namespace AnimeStudio
             BaseFolder = baseFolder;
             assetsManager.Game = game;
             var assets = new List<AssetEntry>();
+            var filters = new AssetMapFilters(typeFilters, nameFilters, containerFilters);
             foreach(var file in LoadFiles(files))
             {
                 BuildCABMap(file, ref collision);
-                BuildAssetMap(file, assets, typeFilters, nameFilters, containerFilters);
+                BuildAssetMap(file, assets, filters);
             }
 
             UpdateContainers(assets, game);
@@ -777,6 +756,91 @@ namespace AnimeStudio
 
             Logger.Info($"Map build successfully !! {collision} collisions found");
             await ExportAssetsMap(assets, game, mapName, savePath, exportListType);
+        }
+
+        private sealed class AssetMapFilters
+        {
+            private readonly ClassIDType[] _typeFilters;
+            private readonly Regex[] _nameFilters;
+            private readonly Regex[] _containerFilters;
+
+            public AssetMapFilters(ClassIDType[] typeFilters, Regex[] nameFilters, Regex[] containerFilters)
+            {
+                _typeFilters = typeFilters ?? Array.Empty<ClassIDType>();
+                _nameFilters = nameFilters ?? Array.Empty<Regex>();
+                _containerFilters = containerFilters ?? Array.Empty<Regex>();
+            }
+
+            public bool Matches(AssetEntry entry)
+            {
+                return Matches(entry.Name, entry.Container, entry.Type);
+            }
+
+            public bool Matches(string name, string container, ClassIDType type)
+            {
+                return MatchesName(name) && MatchesContainer(container) && MatchesType(type);
+            }
+
+            public bool Matches(string name, string container, string type)
+            {
+                return MatchesName(name) && MatchesContainer(container) && MatchesType(type);
+            }
+
+            private bool MatchesName(string name)
+            {
+                if (_nameFilters.Length == 0)
+                    return true;
+
+                foreach (var filter in _nameFilters)
+                {
+                    if (filter.IsMatch(name))
+                        return true;
+                }
+
+                return false;
+            }
+
+            private bool MatchesContainer(string container)
+            {
+                if (_containerFilters.Length == 0)
+                    return true;
+
+                foreach (var filter in _containerFilters)
+                {
+                    if (filter.IsMatch(container))
+                        return true;
+                }
+
+                return false;
+            }
+
+            private bool MatchesType(ClassIDType type)
+            {
+                if (_typeFilters.Length == 0)
+                    return true;
+
+                foreach (var filter in _typeFilters)
+                {
+                    if (filter == type)
+                        return true;
+                }
+
+                return false;
+            }
+
+            private bool MatchesType(string type)
+            {
+                if (_typeFilters.Length == 0)
+                    return true;
+
+                foreach (var filter in _typeFilters)
+                {
+                    if (filter.ToString().Equals(type, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+
+                return false;
+            }
         }
 
         #endregion
