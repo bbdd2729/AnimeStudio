@@ -800,35 +800,44 @@ namespace AnimeStudio.GUI
                     Logger.Info("Processing class structure been cancelled !!");
                     return new Dictionary<string, SortedDictionary<int, TypeTreeItem>>();
                 }
-                if (typeMap.TryGetValue(assetsFile.unityVersion, out var curVer))
-                {
-                    foreach (var type in assetsFile.m_Types.Where(x => x.m_Type != null))
-                    {
-                        var key = type.classID;
-                        if (type.m_ScriptTypeIndex >= 0)
-                        {
-                            key = -1 - type.m_ScriptTypeIndex;
-                        }
-                        curVer[key] = new TypeTreeItem(key, type.m_Type);
-                    }
-                }
-                else
-                {
-                    var items = new SortedDictionary<int, TypeTreeItem>();
-                    foreach (var type in assetsFile.m_Types.Where(x => x.m_Type != null))
-                    {
-                        var key = type.classID;
-                        if (type.m_ScriptTypeIndex >= 0)
-                        {
-                            key = -1 - type.m_ScriptTypeIndex;
-                        }
-                        items[key] = new TypeTreeItem(key, type.m_Type);
-                    }
-                    typeMap.Add(assetsFile.unityVersion, items);
-                }
+
+                var items = GetOrCreateTypeTreeItems(typeMap, assetsFile.unityVersion);
+                AddTypeTreeItems(items, assetsFile.m_Types);
             }
 
             return typeMap;
+        }
+
+        private static SortedDictionary<int, TypeTreeItem> GetOrCreateTypeTreeItems(Dictionary<string, SortedDictionary<int, TypeTreeItem>> typeMap, string unityVersion)
+        {
+            if (!typeMap.TryGetValue(unityVersion, out var items))
+            {
+                items = new SortedDictionary<int, TypeTreeItem>();
+                typeMap.Add(unityVersion, items);
+            }
+
+            return items;
+        }
+
+        private static void AddTypeTreeItems(SortedDictionary<int, TypeTreeItem> items, List<SerializedType> types)
+        {
+            foreach (var type in types)
+            {
+                if (type.m_Type == null)
+                {
+                    continue;
+                }
+
+                var key = GetTypeTreeItemKey(type);
+                items[key] = new TypeTreeItem(key, type.m_Type);
+            }
+        }
+
+        private static int GetTypeTreeItemKey(SerializedType type)
+        {
+            return type.m_ScriptTypeIndex >= 0
+                ? -1 - type.m_ScriptTypeIndex
+                : type.classID;
         }
 
         #region Export assets
